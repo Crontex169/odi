@@ -12,7 +12,7 @@ URL = "https://getodi.com/student/?city=6"
 
 POLL_INTERVAL_SECONDS = 10
 
-REMINDER_INTERVAL_SECONDS = 300  # Re-send alert every 5 min while still open
+REMINDER_INTERVAL_SECONDS = 600
 
 
 REQUEST_TIMEOUT_SECONDS = 15
