@@ -14,12 +14,13 @@ from datetime import datetime
 import requests
 
 from config import (
-    HEARTBEAT_INTERVAL_SECONDS,
     POLL_INTERVAL_SECONDS,
     REMINDER_INTERVAL_SECONDS,
     URL,
 )
+from src.cmd_listener import CommandListener
 from src.cookie_helper import load_cookies
+from src.notifier import TelegramConfig
 from src.notifiers import Mode, Notifier, build_notifier
 from src.scraper import (
     ButtonStatus,
@@ -48,16 +49,6 @@ def _format_alert(name: str, *, is_reminder: bool = False) -> str:
     )
 
 
-def _format_heartbeat(statuses: list) -> str:
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    lines = ["<b>\U00002764 Bot çalışıyor</b>\n"]
-    for s in statuses:
-        icon = "\U0001F7E2" if s.is_active else "\U0001F534"
-        lines.append(f"{icon} {s.name}")
-    lines.append(f"\n<i>{timestamp}</i>")
-    return "\n".join(lines)
-
-
 def _format_status_line(status: ButtonStatus) -> str:
     marker = "OPEN " if status.is_active else "shut "
     return f"  [{marker}] {status.name} ({status.key})"
@@ -68,8 +59,8 @@ def run_once(
     notify: Notifier,
     state: dict[str, str],
     last_alert_times: dict[str, float],
-) -> dict[str, str]:
-    """Single poll iteration. Returns the updated state map."""
+) -> tuple[dict[str, str], list[ButtonStatus]]:
+    """Single poll iteration. Returns (updated state map, latest statuses)."""
     html_text = fetch_page(session)
     statuses = parse_statuses(html_text)
 
@@ -106,7 +97,7 @@ def run_once(
             notify(_format_alert(status.name, is_reminder=True))
             last_alert_times[status.key] = now
 
-    return snapshot(statuses)
+    return snapshot(statuses), statuses
 
 
 def run(mode: Mode = "telegram", *, max_runtime_minutes: int = 0) -> int:
@@ -128,7 +119,22 @@ def run(mode: Mode = "telegram", *, max_runtime_minutes: int = 0) -> int:
 
     # Track when we last sent an alert per restaurant key (in-memory only).
     last_alert_times: dict[str, float] = {}
-    last_heartbeat: float = 0.0  # send first heartbeat on startup
+
+    # Latest statuses shared with the /working command listener.
+    latest_statuses: list[ButtonStatus] | None = None
+
+    def get_statuses():
+        return latest_statuses
+
+    # Start /working command listener (only when Telegram is active).
+    listener: CommandListener | None = None
+    if mode in ("telegram", "both"):
+        try:
+            tg_config = TelegramConfig.from_env()
+            listener = CommandListener(tg_config, get_statuses)
+            listener.start()
+        except RuntimeError as exc:
+            print(f"  Command listener skipped: {exc}", file=sys.stderr)
 
     deadline = (
         time.time() + max_runtime_minutes * 60 if max_runtime_minutes > 0 else None
@@ -148,16 +154,8 @@ def run(mode: Mode = "telegram", *, max_runtime_minutes: int = 0) -> int:
                 return 0
 
             try:
-                state = run_once(session, notify, state, last_alert_times)
+                state, latest_statuses = run_once(session, notify, state, last_alert_times)
                 save_state(state)
-
-                # --- Heartbeat: "I'm alive" every HEARTBEAT_INTERVAL_SECONDS ---
-                now = time.time()
-                if now - last_heartbeat >= HEARTBEAT_INTERVAL_SECONDS:
-                    statuses = parse_statuses(fetch_page(session))
-                    print(f"  -> HEARTBEAT: sending alive signal ...")
-                    notify(_format_heartbeat(statuses))
-                    last_heartbeat = now
             except CookiesExpiredError as exc:
                 msg = (
                     "Odi watcher: cookies expired. Please re-run "
@@ -176,3 +174,6 @@ def run(mode: Mode = "telegram", *, max_runtime_minutes: int = 0) -> int:
     except KeyboardInterrupt:
         print("\nStopped by user.")
         return 0
+    finally:
+        if listener:
+            listener.stop()

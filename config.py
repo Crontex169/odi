@@ -14,7 +14,6 @@ POLL_INTERVAL_SECONDS = 10
 
 REMINDER_INTERVAL_SECONDS = 300  # Re-send alert every 5 min while still open
 
-HEARTBEAT_INTERVAL_SECONDS = 21600  # Send "I'm alive" every 6 hours
 
 REQUEST_TIMEOUT_SECONDS = 15
 
