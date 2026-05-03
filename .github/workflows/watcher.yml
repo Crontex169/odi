@@ -1,0 +1,50 @@
+name: Odi Watcher
+
+on:
+  # Auto-restart every 5 hours 50 minutes (just under the 6h limit).
+  schedule:
+    - cron: "0 */6 * * *"      # every 6 hours as a safety net
+  # Manual trigger from the Actions tab.
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360        # hard cap: 6 hours
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # --- Write secrets to the files the app expects ---
+      - name: Create .env
+        run: |
+          cat > .env <<EOF
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+          EOF
+
+      - name: Create cookies.json
+        run: echo '${{ secrets.ODI_COOKIES }}' > cookies.json
+
+      # --- Restore state from previous run (if any) ---
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: state.json
+          key: odi-state-${{ github.run_id }}
+          restore-keys: |
+            odi-state-
+
+      # --- Run the watcher (auto-stops at 350 minutes) ---
+      - name: Run watcher
+        run: python -u main.py --telegram --max-runtime 350
