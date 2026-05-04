@@ -39,5 +39,6 @@ TARGETS = [
     {
         "key": "queens_burger",
         "menu_name": "Classic Burger Menü",
+        "restaurant_name": "Queen's Burger",
     },
 ]

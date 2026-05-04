@@ -94,8 +94,8 @@ def parse_statuses(html_text: str) -> list[ButtonStatus]:
     # Build a lookup: lowercase menu-restaurant text → (name, button element)
     menu_boxes = tree.xpath("//div[contains(@class, 'menu-box')]")
 
-    # Map: lowercased menu_name → (display_name, restaurant_title, button_classes)
-    card_map: dict[str, tuple[str, str, str]] = {}
+    # Map: (lowercased menu_name, lowercased restaurant_title) → (display_name, restaurant_title, button_classes)
+    card_map: dict[tuple[str, str], tuple[str, str, str]] = {}
     for box in menu_boxes:
         name_els = box.xpath(".//div[contains(@class, 'menu-restaurant')]")
         title_els = box.xpath(".//div[contains(@class, 'menu-title')]")
@@ -115,7 +115,9 @@ def parse_statuses(html_text: str) -> list[ButtonStatus]:
 
         raw_class = (btn_el.get("class") if btn_el is not None else "") or ""
 
-        key = display_name.lower()
+        # Use both menu name and restaurant title as the key to distinguish
+        # different restaurants offering the same menu.
+        key = (display_name.lower(), restaurant_title.lower())
         # Only keep the first occurrence (the "indirimli al" section at the top
         # of the page usually duplicates cards; the second, with the disabled
         # button, is the one we care about).
@@ -124,9 +126,22 @@ def parse_statuses(html_text: str) -> list[ButtonStatus]:
 
     results: list[ButtonStatus] = []
     for target in TARGETS:
-        lookup_key = target["menu_name"].lower()
-        if lookup_key in card_map:
-            display_name, restaurant_title, raw_class = card_map[lookup_key]
+        target_menu = target["menu_name"].lower()
+        target_rest = target.get("restaurant_name", "").lower()
+
+        found_card = None
+        for (menu_key, rest_key), (display_name, restaurant_title, raw_class) in card_map.items():
+            if menu_key == target_menu:
+                if target_rest:
+                    if target_rest in rest_key:
+                        found_card = (display_name, restaurant_title, raw_class)
+                        break
+                else:
+                    found_card = (display_name, restaurant_title, raw_class)
+                    break
+
+        if found_card:
+            display_name, restaurant_title, raw_class = found_card
             class_tokens = raw_class.split()
             is_active = "disabled" not in class_tokens
             label = f"{display_name} — {restaurant_title}" if restaurant_title else display_name
