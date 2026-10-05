@@ -34,7 +34,8 @@ TARGETS = [
     },
     {
         "key": "sinyor_chef",
-        "menu_name": "seçmeli sos makarna tavuk menü",
+        "menu_name": "Penne Alfredo&Cafe de Paris&Köri Soslu Makarna",
+        "restaurant_name": "Sinyor Chef",
     },
     {
         "key": "queens_burger",
